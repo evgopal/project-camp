@@ -6,6 +6,7 @@ const Joi = require("joi");
 const mongoose = require("mongoose");
 const wrapAsync = require("./utilities/wrapAsync");
 const Campground = require("./models/campground");
+const Review = require("./models/review");
 const methodOverride = require("method-override");
 const ExpressError = require("./utilities/expressError");
 
@@ -45,7 +46,23 @@ const validateCampground = (req, res, next) => {
     const msg = error.details.map((el) => el.message);
     throw new ExpressError(msg, 400);
   } else {
-      next();
+    next();
+  }
+};
+
+const validateReviews = (req, res, next) => {
+  const reviewSchema = Joi.object({
+    review: Joi.object({
+      rating: Joi.number().required(),
+      body: Joi.string().required(),
+    }).required(),
+  });
+  const { error } = reviewSchema.validate(req.body);
+  if (error) {
+    const msg = error.details.map((el) => el.message);
+    throw new ExpressError(msg, 400);
+  } else {
+    next();
   }
 };
 
@@ -78,8 +95,8 @@ app.post(
 app.get(
   "/campgrounds/:id",
   wrapAsync(async (req, res) => {
-    const { id } = req.params;
-    const campground = await Campground.findById(id);
+    
+    const campground = await Campground.findById(req.params.id).populate('reviews');
     res.render("campgrounds/show", { campground });
   })
 );
@@ -112,6 +129,27 @@ app.delete(
     res.redirect("/campgrounds");
   })
 );
+
+app.post(
+  "/campgrounds/:id/reviews",
+  validateReviews,
+  wrapAsync(async (req, res) => {
+    const campground = await Campground.findById(req.params.id);
+    const review = new Review(req.body.review);
+    campground.reviews.push(review);
+    await review.save();
+    await campground.save();
+    res.redirect(`/campgrounds/${campground._id}`);
+  })
+);
+
+app.delete('/campgrounds/:id/reviews/:reviewId', wrapAsync(async(req,res) => {
+  const {id, reviewId} = req.params;
+  await Campground.findByIdAndUpdate(id, {$pull: {reviews: reviewId } })
+  await Review.findByIdAndDelete(reviewId);
+  res.redirect(`/campgrounds/${id}`);
+
+}))
 
 app.all("*", (req, res, next) => {
   next(new ExpressError("Page is not here", 404));
